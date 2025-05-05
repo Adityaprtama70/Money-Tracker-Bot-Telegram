@@ -1,12 +1,9 @@
 import os
 import json
 import logging
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    ReplyKeyboardMarkup
-)
+from collections import defaultdict
+from datetime import datetime
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -17,23 +14,38 @@ from telegram.ext import (
 )
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
 
-# Logging
-logging.basicConfig(level=logging.INFO)
+# Logging setup
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # --- Google Sheets Setup ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 service_account_info = json.loads(os.environ['GOOGLE_CREDENTIALS_JSON'])
 creds = ServiceAccountCredentials.from_json_keyfile_dict(service_account_info, scope)
 client = gspread.authorize(creds)
-
 spreadsheet = client.open("Money Tracker Bot")
-sheet = spreadsheet.sheet1  # atau gunakan: spreadsheet.worksheet("Sheet1")
+sheet = spreadsheet.sheet1
 
+# --- Helper Functions ---
+def get_monthly_expenses_by_category(month=None):
+    """Helper function to get expenses by category"""
+    records = sheet.get_all_records()
+    month = month or datetime.now().strftime("%Y-%m")
+    
+    kategori_total = defaultdict(int)
+    for r in records:
+        if r["Tanggal"].startswith(month) and r["Tipe"].lower() == "pengeluaran":
+            kategori_total[r["Kategori"].strip().title()] += int(r["Jumlah"])
+    
+    return kategori_total
 
-# --- Command: /start ---
+# --- Command Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /start command"""
     keyboard = [
         [InlineKeyboardButton("➕ Tambah Transaksi", callback_data='tambah')],
         [InlineKeyboardButton("📆 Summary Hari Ini", callback_data='summary_hari')],
@@ -52,9 +64,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-
-# --- Command: /menu ---
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /menu command"""
     keyboard = [
         [InlineKeyboardButton("➕ Tambah Transaksi", callback_data='tambah')],
         [InlineKeyboardButton("📆 Summary Hari Ini", callback_data='summary_hari')],
@@ -63,6 +74,24 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Silakan pilih menu:", reply_markup=reply_markup)
+
+async def kategori(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for /kategori command"""
+    try:
+        kategori_total = get_monthly_expenses_by_category()
+        
+        if not kategori_total:
+            await update.message.reply_text("❌ Belum ada data pengeluaran bulan ini.")
+            return
+
+        result = "📊 *Pengeluaran per Kategori (Bulan Ini)*\n\n"
+        for kategori, total in sorted(kategori_total.items(), key=lambda x: x[1], reverse=True):
+            result += f"• *{kategori}*: Rp{total:,}\n".replace(",", ".")
+
+        await update.message.reply_text(result, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error in kategori: {str(e)}", exc_info=True)
+        await update.message.reply_text("❌ Terjadi kesalahan saat mengambil data kategori.")
 
 
 # --- Callback Button Handler ---
@@ -90,25 +119,8 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(f"🗓️ Pengeluaran bulan ini: Rp{total:,}".replace(",", "."))
 
     elif data == "kategori":
-        from collections import defaultdict
-        bulan_ini = datetime.now().strftime("%Y-%m")
-
-        kategori_total = defaultdict(int)
-        for r in records:
-            if r["Tanggal"].startswith(bulan_ini) and r["Tipe"].lower() == "pengeluaran":
-                kategori = r["Kategori"].strip().title()  # <-- perbaikan di sini
-                kategori_total[kategori] += int(r["Jumlah"])
-
-        if not kategori_total:
-            await query.edit_message_text("❌ Belum ada data pengeluaran bulan ini.")
-            return
-
-        result = "📊 *Pengeluaran per Kategori (Bulan Ini)*\n\n"
-        for kategori, total in kategori_total.items():
-            result += f"• *{kategori}*: Rp{total:,}\n".replace(",", ".")
-
-        await query.edit_message_text(result, parse_mode="Markdown")
-
+    kategori_total = get_monthly_expenses_by_category()
+    # ... kode tampilan yang sama ...
 
 # --- Message Handler: Transaksi ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -174,18 +186,25 @@ async def kategori(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Error in kategori: {str(e)}")
         await update.message.reply_text("❌ Gagal mengambil data kategori.")
 
-# --- Main ---
-TOKEN = os.getenv("BOT_TOKEN")
+def main():
+    """Start the bot."""
+    TOKEN = os.getenv("BOT_TOKEN")
+    if not TOKEN:
+        logger.error("BOT_TOKEN environment variable not set!")
+        return
 
-app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).build()
 
-# Handlers
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("menu", menu))
-app.add_handler(CommandHandler("summary_bulan", summary_bulan))
-app.add_handler(CommandHandler("kategori", kategori))
-app.add_handler(CallbackQueryHandler(handle_menu_selection))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Register handlers
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("menu", menu))
+    app.add_handler(CommandHandler("kategori", kategori))
+    app.add_handler(CommandHandler("summary_bulan", summary_bulan))
+    app.add_handler(CallbackQueryHandler(handle_menu_selection))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Run
-app.run_polling()
+    logger.info("Bot started")
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()
