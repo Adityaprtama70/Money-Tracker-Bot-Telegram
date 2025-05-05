@@ -31,16 +31,24 @@ spreadsheet = client.open("Money Tracker Bot")
 sheet = spreadsheet.sheet1
 
 # --- Helper Functions ---
-def get_monthly_expenses_by_category(month=None):
-    """Helper function to get expenses by category"""
+def get_daily_expenses(date=None):
+    """Get expenses for a specific day"""
+    date = date or datetime.now().strftime("%Y-%m-%d")
     records = sheet.get_all_records()
+    return [r for r in records if r["Tanggal"].startswith(date) and r["Tipe"].lower() == "pengeluaran"]
+
+def get_monthly_expenses(month=None):
+    """Get expenses for a specific month"""
     month = month or datetime.now().strftime("%Y-%m")
-    
+    records = sheet.get_all_records()
+    return [r for r in records if r["Tanggal"].startswith(month) and r["Tipe"].lower() == "pengeluaran"]
+
+def get_monthly_expenses_by_category(month=None):
+    """Get expenses by category for a specific month"""
+    expenses = get_monthly_expenses(month)
     kategori_total = defaultdict(int)
-    for r in records:
-        if r["Tanggal"].startswith(month) and r["Tipe"].lower() == "pengeluaran":
-            kategori_total[r["Kategori"].strip().title()] += int(r["Jumlah"])
-    
+    for r in expenses:
+        kategori_total[r["Kategori"].strip().title()] += int(r["Jumlah"])
     return kategori_total
 
 # --- Command Handlers ---
@@ -93,14 +101,12 @@ async def kategori(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in kategori: {str(e)}", exc_info=True)
         await update.message.reply_text("❌ Terjadi kesalahan saat mengambil data kategori.")
 
-
 # --- Callback Button Handler ---
 async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     data = query.data
-    records = sheet.get_all_records()
 
     if data == "tambah":
         await query.edit_message_text(
@@ -108,19 +114,25 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown"
         )
     elif data == "summary_hari":
-        tanggal_hari_ini = datetime.now().strftime("%Y-%m-%d")
-        hari_ini = [r for r in records if r["Tanggal"].startswith(tanggal_hari_ini) and r["Tipe"].lower() == "pengeluaran"]
-        total = sum(int(r["Jumlah"]) for r in hari_ini)
+        expenses = get_daily_expenses()
+        total = sum(int(r["Jumlah"]) for r in expenses)
         await query.edit_message_text(f"📆 Pengeluaran hari ini: Rp{total:,}".replace(",", "."))
     elif data == "summary_bulan":
-        bulan_ini = datetime.now().strftime("%Y-%m")
-        bulan_records = [r for r in records if r["Tanggal"].startswith(bulan_ini) and r["Tipe"].lower() == "pengeluaran"]
-        total = sum(int(r["Jumlah"]) for r in bulan_records)
+        expenses = get_monthly_expenses()
+        total = sum(int(r["Jumlah"]) for r in expenses)
         await query.edit_message_text(f"🗓️ Pengeluaran bulan ini: Rp{total:,}".replace(",", "."))
-
     elif data == "kategori":
-    kategori_total = get_monthly_expenses_by_category()
-    # ... kode tampilan yang sama ...
+        kategori_total = get_monthly_expenses_by_category()
+        
+        if not kategori_total:
+            await query.edit_message_text("❌ Belum ada data pengeluaran bulan ini.")
+            return
+
+        result = "📊 *Pengeluaran per Kategori (Bulan Ini)*\n\n"
+        for kategori, total in sorted(kategori_total.items(), key=lambda x: x[1], reverse=True):
+            result += f"• *{kategori}*: Rp{total:,}\n".replace(",", ".")
+
+        await query.edit_message_text(result, parse_mode="Markdown")
 
 # --- Message Handler: Transaksi ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -131,11 +143,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sheet.append_row([tanggal, deskripsi, kategori, tipe, jumlah])
         await update.message.reply_text("✅ Data berhasil disimpan!")
     except Exception as e:
-        logging.error(str(e))
+        logger.error(f"Error handling message: {str(e)}", exc_info=True)
         await update.message.reply_text("❌ Format salah. Gunakan:\nDeskripsi, Kategori, Tipe, Jumlah")
 
-
-# --- Command: /summary_bulan 2025-04 ---
+# --- Command: /summary_bulan ---
 async def summary_bulan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if len(context.args) != 1:
@@ -143,48 +154,15 @@ async def summary_bulan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         bulan_input = context.args[0]
-        records = sheet.get_all_records()
-        bulan_ini = [
-            r for r in records
-            if r['Tipe'].lower() == 'pengeluaran' and r['Tanggal'].startswith(bulan_input)
-        ]
-        total = sum(int(r['Jumlah']) for r in bulan_ini)
+        expenses = get_monthly_expenses(bulan_input)
+        total = sum(int(r['Jumlah']) for r in expenses)
         await update.message.reply_text(
             f"📆 Total pengeluaran bulan *{bulan_input}*: Rp{total:,}".replace(",", "."),
             parse_mode="Markdown"
         )
     except Exception as e:
-        logging.error(str(e))
+        logger.error(f"Error in summary_bulan: {str(e)}", exc_info=True)
         await update.message.reply_text("❌ Gagal mengambil summary.")
-
-# [Tambahkan ini sebelum bagian Main]
-async def kategori(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler untuk command /kategori"""
-    try:
-        records = sheet.get_all_records()
-        from collections import defaultdict
-        
-        bulan_ini = datetime.now().strftime("%Y-%m")
-        kategori_total = defaultdict(int)
-        
-        for r in records:
-            if r["Tanggal"].startswith(bulan_ini) and r["Tipe"].lower() == "pengeluaran":
-                kategori = r["Kategori"].strip().title()
-                kategori_total[kategori] += int(r["Jumlah"])
-
-        if not kategori_total:
-            await update.message.reply_text("❌ Belum ada data pengeluaran bulan ini.")
-            return
-
-        result = "📊 *Pengeluaran per Kategori (Bulan Ini)*\n\n"
-        for kategori, total in sorted(kategori_total.items(), key=lambda x: x[1], reverse=True):
-            result += f"• *{kategori}*: Rp{total:,}\n".replace(",", ".")
-
-        await update.message.reply_text(result, parse_mode="Markdown")
-        
-    except Exception as e:
-        logging.error(f"Error in kategori: {str(e)}")
-        await update.message.reply_text("❌ Gagal mengambil data kategori.")
 
 def main():
     """Start the bot."""
