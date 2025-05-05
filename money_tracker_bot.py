@@ -1,3 +1,4 @@
+import json
 import logging
 from telegram import (
     Update,
@@ -22,7 +23,8 @@ logging.basicConfig(level=logging.INFO)
 
 # --- Google Sheets Setup ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("money-tracker-bot-458403-26377cc845ec.json", scope)
+service_account_info = json.loads(os.environ['GOOGLE_CREDENTIALS_JSON'])
+creds = ServiceAccountCredentials.from_json_keyfile_dict(service_account_info, scope)
 client = gspread.authorize(creds)
 
 spreadsheet = client.open("Money Tracker Bot")
