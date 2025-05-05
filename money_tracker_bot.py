@@ -145,9 +145,36 @@ async def summary_bulan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(str(e))
         await update.message.reply_text("❌ Gagal mengambil summary.")
 
+# [Tambahkan ini sebelum bagian Main]
+async def kategori(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler untuk command /kategori"""
+    try:
+        records = sheet.get_all_records()
+        from collections import defaultdict
+        
+        bulan_ini = datetime.now().strftime("%Y-%m")
+        kategori_total = defaultdict(int)
+        
+        for r in records:
+            if r["Tanggal"].startswith(bulan_ini) and r["Tipe"].lower() == "pengeluaran":
+                kategori = r["Kategori"].strip().title()
+                kategori_total[kategori] += int(r["Jumlah"])
+
+        if not kategori_total:
+            await update.message.reply_text("❌ Belum ada data pengeluaran bulan ini.")
+            return
+
+        result = "📊 *Pengeluaran per Kategori (Bulan Ini)*\n\n"
+        for kategori, total in sorted(kategori_total.items(), key=lambda x: x[1], reverse=True):
+            result += f"• *{kategori}*: Rp{total:,}\n".replace(",", ".")
+
+        await update.message.reply_text(result, parse_mode="Markdown")
+        
+    except Exception as e:
+        logging.error(f"Error in kategori: {str(e)}")
+        await update.message.reply_text("❌ Gagal mengambil data kategori.")
 
 # --- Main ---
-import os
 TOKEN = os.getenv("BOT_TOKEN")
 
 app = ApplicationBuilder().token(TOKEN).build()
