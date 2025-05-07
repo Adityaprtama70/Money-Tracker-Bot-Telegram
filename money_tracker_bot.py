@@ -19,7 +19,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-logger = logging.getLogger(_name_)
+logger = logging.getLogger(__name__)
 
 # --- Google Sheets Setup ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -51,7 +51,7 @@ def get_monthly_expenses_by_category(month=None):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         ["➕ Tambah Transaksi"],
-        ["📆 Summary Hari Ini", "🗓 Summary Bulan Ini"],
+        ["📆 Summary Hari Ini", "🗓️ Summary Bulan Ini"],
         ["📊 Per Kategori"],
         ["/menu"]
     ]
@@ -60,9 +60,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Selamat datang di Money Tracker! 🧾\n\n"
         "Ketik transaksi dalam format:\n"
-        "Deskripsi, Kategori, Tipe, Jumlah\n\n"
-        "Contoh:\n"
-        "Makan siang, Makanan, Pengeluaran, 25000",
+        "`Deskripsi, Kategori, Tipe, Jumlah`\n\n"
+        "*Contoh:*\n"
+        "`Makan siang, Makanan, Pengeluaran, 25000`",
         parse_mode="Markdown",
         reply_markup=reply_markup
     )
@@ -70,7 +70,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         ["➕ Tambah Transaksi"],
-        ["📆 Summary Hari Ini", "🗓 Summary Bulan Ini"],
+        ["📆 Summary Hari Ini", "🗓️ Summary Bulan Ini"],
         ["📊 Per Kategori"],
         ["/start"]
     ]
@@ -88,9 +88,9 @@ async def kategori(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Belum ada data pengeluaran bulan ini.")
             return
 
-        result = "📊 Pengeluaran per Kategori (Bulan Ini)\n\n"
+        result = "📊 *Pengeluaran per Kategori (Bulan Ini)*\n\n"
         for kategori, total in sorted(kategori_total.items(), key=lambda x: x[1], reverse=True):
-            result += f"• {kategori}: Rp{total:,}\n".replace(",", ".")
+            result += f"• *{kategori}*: Rp{total:,}\n".replace(",", ".")
         await update.message.reply_text(result, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Error in kategori: {str(e)}", exc_info=True)
@@ -103,7 +103,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "➕ tambah transaksi":
         await update.message.reply_text(
             "📥 Silakan kirim transaksi dalam format:\n"
-            "Deskripsi, Kategori, Tipe, Jumlah",
+            "`Deskripsi, Kategori, Tipe, Jumlah`",
             parse_mode="Markdown"
         )
         return
@@ -114,10 +114,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"📆 Pengeluaran hari ini: Rp{total:,}".replace(",", "."))
         return
 
-    elif text == "🗓 summary bulan ini":
+    elif text == "🗓️ summary bulan ini":
         expenses = get_monthly_expenses()
         total = sum(int(r["Jumlah"]) for r in expenses)
-        await update.message.reply_text(f"🗓 Pengeluaran bulan ini: Rp{total:,}".replace(",", "."))
+        await update.message.reply_text(f"🗓️ Pengeluaran bulan ini: Rp{total:,}".replace(",", "."))
         return
 
     elif text == "📊 per kategori":
@@ -125,9 +125,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not kategori_total:
             await update.message.reply_text("❌ Belum ada data pengeluaran bulan ini.")
         else:
-            result = "📊 Pengeluaran per Kategori (Bulan Ini)\n\n"
+            result = "📊 *Pengeluaran per Kategori (Bulan Ini)*\n\n"
             for kategori, total in sorted(kategori_total.items(), key=lambda x: x[1], reverse=True):
-                result += f"• {kategori}: Rp{total:,}\n".replace(",", ".")
+                result += f"• *{kategori}*: Rp{total:,}\n".replace(",", ".")
             await update.message.reply_text(result, parse_mode="Markdown")
         return
 
@@ -152,7 +152,7 @@ async def summary_bulan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         expenses = get_monthly_expenses(bulan_input)
         total = sum(int(r['Jumlah']) for r in expenses)
         await update.message.reply_text(
-            f"📆 Total pengeluaran bulan {bulan_input}: Rp{total:,}".replace(",", "."),
+            f"📆 Total pengeluaran bulan *{bulan_input}*: Rp{total:,}".replace(",", "."),
             parse_mode="Markdown"
         )
     except Exception as e:
@@ -177,5 +177,5 @@ def main():
     logger.info("Bot started")
     app.run_polling()
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     main()
