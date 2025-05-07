@@ -3,19 +3,18 @@ import json
 import logging
 from collections import defaultdict
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
     ContextTypes,
     filters
 )
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# Logging setup
+# --- Logging setup ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -32,19 +31,16 @@ sheet = spreadsheet.sheet1
 
 # --- Helper Functions ---
 def get_daily_expenses(date=None):
-    """Get expenses for a specific day"""
     date = date or datetime.now().strftime("%Y-%m-%d")
     records = sheet.get_all_records()
     return [r for r in records if r["Tanggal"].startswith(date) and r["Tipe"].lower() == "pengeluaran"]
 
 def get_monthly_expenses(month=None):
-    """Get expenses for a specific month"""
     month = month or datetime.now().strftime("%Y-%m")
     records = sheet.get_all_records()
     return [r for r in records if r["Tanggal"].startswith(month) and r["Tipe"].lower() == "pengeluaran"]
 
 def get_monthly_expenses_by_category(month=None):
-    """Get expenses by category for a specific month"""
     expenses = get_monthly_expenses(month)
     kategori_total = defaultdict(int)
     for r in expenses:
@@ -53,41 +49,41 @@ def get_monthly_expenses_by_category(month=None):
 
 # --- Command Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for /start command"""
     keyboard = [
-        [InlineKeyboardButton("➕ Tambah Transaksi", callback_data='tambah')],
-        [InlineKeyboardButton("📆 Summary Hari Ini", callback_data='summary_hari')],
-        [InlineKeyboardButton("🗓️ Summary Bulan Ini", callback_data='summary_bulan')],
-        [InlineKeyboardButton("📊 Per Kategori", callback_data='kategori')],
+        ["➕ Tambah Transaksi"],
+        ["📆 Summary Hari Ini", "🗓️ Summary Bulan Ini"],
+        ["📊 Per Kategori"],
+        ["/menu"]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
     await update.message.reply_text(
-        "Selamat datang di Money Tracker!\n\n"
-        "Gunakan format ini untuk mencatat pengeluaran/pemasukan:\n"
+        "Selamat datang di Money Tracker! 🧾\n\n"
+        "Ketik transaksi dalam format:\n"
         "`Deskripsi, Kategori, Tipe, Jumlah`\n\n"
-        "Contoh:\n"
+        "*Contoh:*\n"
         "`Makan siang, Makanan, Pengeluaran, 25000`",
         parse_mode="Markdown",
         reply_markup=reply_markup
     )
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for /menu command"""
     keyboard = [
-        [InlineKeyboardButton("➕ Tambah Transaksi", callback_data='tambah')],
-        [InlineKeyboardButton("📆 Summary Hari Ini", callback_data='summary_hari')],
-        [InlineKeyboardButton("🗓️ Summary Bulan Ini", callback_data='summary_bulan')],
-        [InlineKeyboardButton("📊 Per Kategori", callback_data='kategori')],
+        ["➕ Tambah Transaksi"],
+        ["📆 Summary Hari Ini", "🗓️ Summary Bulan Ini"],
+        ["📊 Per Kategori"],
+        ["/start"]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Silakan pilih menu:", reply_markup=reply_markup)
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    await update.message.reply_text(
+        "📋 Menu Utama:\nSilakan pilih aksi dari tombol di bawah ini.",
+        reply_markup=reply_markup
+    )
 
 async def kategori(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for /kategori command"""
     try:
         kategori_total = get_monthly_expenses_by_category()
-        
         if not kategori_total:
             await update.message.reply_text("❌ Belum ada data pengeluaran bulan ini.")
             return
@@ -95,49 +91,48 @@ async def kategori(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = "📊 *Pengeluaran per Kategori (Bulan Ini)*\n\n"
         for kategori, total in sorted(kategori_total.items(), key=lambda x: x[1], reverse=True):
             result += f"• *{kategori}*: Rp{total:,}\n".replace(",", ".")
-
         await update.message.reply_text(result, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Error in kategori: {str(e)}", exc_info=True)
         await update.message.reply_text("❌ Terjadi kesalahan saat mengambil data kategori.")
 
-# --- Callback Button Handler ---
-async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+# --- Message Handler: Transaksi & Tombol ---
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip().lower()
 
-    data = query.data
-
-    if data == "tambah":
-        await query.edit_message_text(
-            "📥 Kirim transaksi dalam format:\n`Deskripsi, Kategori, Tipe, Jumlah`",
+    if text == "➕ tambah transaksi":
+        await update.message.reply_text(
+            "📥 Silakan kirim transaksi dalam format:\n"
+            "`Deskripsi, Kategori, Tipe, Jumlah`",
             parse_mode="Markdown"
         )
-    elif data == "summary_hari":
+        return
+
+    elif text == "📆 summary hari ini":
         expenses = get_daily_expenses()
         total = sum(int(r["Jumlah"]) for r in expenses)
-        await query.edit_message_text(f"📆 Pengeluaran hari ini: Rp{total:,}".replace(",", "."))
-    elif data == "summary_bulan":
+        await update.message.reply_text(f"📆 Pengeluaran hari ini: Rp{total:,}".replace(",", "."))
+        return
+
+    elif text == "🗓️ summary bulan ini":
         expenses = get_monthly_expenses()
         total = sum(int(r["Jumlah"]) for r in expenses)
-        await query.edit_message_text(f"🗓️ Pengeluaran bulan ini: Rp{total:,}".replace(",", "."))
-    elif data == "kategori":
+        await update.message.reply_text(f"🗓️ Pengeluaran bulan ini: Rp{total:,}".replace(",", "."))
+        return
+
+    elif text == "📊 per kategori":
         kategori_total = get_monthly_expenses_by_category()
-        
         if not kategori_total:
-            await query.edit_message_text("❌ Belum ada data pengeluaran bulan ini.")
-            return
+            await update.message.reply_text("❌ Belum ada data pengeluaran bulan ini.")
+        else:
+            result = "📊 *Pengeluaran per Kategori (Bulan Ini)*\n\n"
+            for kategori, total in sorted(kategori_total.items(), key=lambda x: x[1], reverse=True):
+                result += f"• *{kategori}*: Rp{total:,}\n".replace(",", ".")
+            await update.message.reply_text(result, parse_mode="Markdown")
+        return
 
-        result = "📊 *Pengeluaran per Kategori (Bulan Ini)*\n\n"
-        for kategori, total in sorted(kategori_total.items(), key=lambda x: x[1], reverse=True):
-            result += f"• *{kategori}*: Rp{total:,}\n".replace(",", ".")
-
-        await query.edit_message_text(result, parse_mode="Markdown")
-
-# --- Message Handler: Transaksi ---
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Jika bukan tombol, asumsikan sebagai transaksi
     try:
-        text = update.message.text
         deskripsi, kategori, tipe, jumlah = [x.strip() for x in text.split(",", 3)]
         tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         sheet.append_row([tanggal, deskripsi, kategori, tipe, jumlah])
@@ -146,7 +141,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error handling message: {str(e)}", exc_info=True)
         await update.message.reply_text("❌ Format salah. Gunakan:\nDeskripsi, Kategori, Tipe, Jumlah")
 
-# --- Command: /summary_bulan ---
+# --- Command: /summary_bulan [YYYY-MM] ---
 async def summary_bulan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if len(context.args) != 1:
@@ -164,8 +159,8 @@ async def summary_bulan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in summary_bulan: {str(e)}", exc_info=True)
         await update.message.reply_text("❌ Gagal mengambil summary.")
 
+# --- Main App ---
 def main():
-    """Start the bot."""
     TOKEN = os.getenv("BOT_TOKEN")
     if not TOKEN:
         logger.error("BOT_TOKEN environment variable not set!")
@@ -173,12 +168,10 @@ def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Register handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", menu))
     app.add_handler(CommandHandler("kategori", kategori))
     app.add_handler(CommandHandler("summary_bulan", summary_bulan))
-    app.add_handler(CallbackQueryHandler(handle_menu_selection))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("Bot started")
