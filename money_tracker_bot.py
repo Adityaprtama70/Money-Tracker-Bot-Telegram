@@ -125,22 +125,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         sheet.append_row([tanggal, deskripsi, kategori, tipe, jumlah, asset])
-        saldo = update_balance(asset, jumlah, tipe)
 
-        try:
-            await update.message.reply_text(
-                f"✅ *Catatanmu berhasil disimpan!*\n\n"
-                f"*Deskripsi* : {deskripsi}\n"
-                f"*Tanggal*   : {datetime.now().strftime('%-d %B %Y')}\n"
-                f"*Nominal*   : Rp. {jumlah:,}\n"
-                f"*Kategori*  : {kategori}\n"
-                f"*Asset*     : {asset}\n\n"
-                f"*Saldo terbaru* : Rp. {saldo:,}".replace(",", "."),
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            logger.warning(f"Gagal kirim balasan format: {e}")
-            await update.message.reply_text("✅ Catatanmu berhasil disimpan. (balasan tidak bisa diformat)")
+        await update.message.reply_text("✅ Data berhasil disimpan!")
 
     except Exception as e:
         logger.error(f"Fatal error saat parsing/simpan: {str(e)}", exc_info=True)
