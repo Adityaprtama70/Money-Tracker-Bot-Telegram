@@ -77,28 +77,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+
     if text.lower().startswith('+ tambah transaksi'):
         await update.message.reply_text("Silakan ketik transaksi Anda.")
         return
 
     if 'summary hari' in text.lower():
         await summary_hari(update)
+        return
     elif 'summary bulan' in text.lower():
         await summary_bulan(update)
+        return
     elif 'per kategori' in text.lower():
         await summary_kategori(update)
-    else:
-        tipe, deskripsi, kategori, jumlah = parse_transaction(text)
-        tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sheet.append_row([tanggal, deskripsi, kategori, tipe, jumlah, kategori])
+        return
 
-        saldo = update_balance(kategori, jumlah, tipe)
+    # Parsing transaksi biasa
+    tipe, deskripsi, kategori, jumlah = parse_transaction(text)
+    tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sheet.append_row([tanggal, deskripsi, kategori, tipe, jumlah, kategori])
 
-        await update.message.reply_text(
-            f"Hallo.\nCatatanmu berhasil disimpan\n\n"
-            f"{deskripsi}\nTanggal {datetime.now().strftime('%-d %B %Y')}\n"
-            f"Nominal : Rp. {jumlah:,}\nAsset : {kategori}\n\nSaldo terbaru: Rp. {saldo:,}"
-        )
+    saldo = update_balance(kategori, jumlah, tipe)
+
+    # Kirim balasan konfirmasi
+    await update.message.reply_text(
+        f"✅ *Catatanmu berhasil disimpan!*\n\n"
+        f"*Deskripsi* : {deskripsi}\n"
+        f"*Tanggal*   : {datetime.now().strftime('%-d %B %Y')}\n"
+        f"*Nominal*   : Rp. {jumlah:,}\n"
+        f"*Asset*     : {kategori}\n\n"
+        f"*Saldo terbaru* : Rp. {saldo:,}".replace(",", "."),
+        parse_mode="Markdown"
+    )
 
 async def summary_hari(update: Update):
     today = datetime.now().strftime("%Y-%m-%d")
