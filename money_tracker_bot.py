@@ -37,6 +37,21 @@ def extract_amount(text):
         return int(amount)
     return 0
 
+def categorize(text):
+    categories = {
+        "Pemasukan": ["gaji", "bonus", "investasi", "tabungan"],
+        "Pakaian": ["baju", "celana", "jaket", "sepatu"],
+        "Minuman": ["kopi", "teh", "susu", "es", "minum"],
+        "Makanan": ["nasi", "ayam", "mie", "makan", "soto", "bakso", "pizza", "burger"],
+        "Tagihan": ["listrik", "pdam", "wifi", "pulsa", "token"],
+        "Transportasi": ["gojek", "grab", "maxim", "tj", "mrt", "bensin", "angkot"]
+    }
+    for kategori, keywords in categories.items():
+        for word in keywords:
+            if word in text:
+                return kategori
+    return "Lainnya"
+
 def update_balance(asset: str, amount: int, tipe: str):
     records = sheet.get_all_records()
     saldo = 0
@@ -55,11 +70,20 @@ def update_balance(asset: str, amount: int, tipe: str):
 def parse_transaction(text):
     text = text.lower()
     tipe = 'pemasukan' if 'masuk' in text else 'pengeluaran'
-    amount = extract_amount(text)
+    jumlah = extract_amount(text)
+    asset_match = re.search(r"(bca|bri|mandiri|qris|ovo|gopay|dana|tunai)", text)
+    asset = asset_match.group(1).capitalize() if asset_match else "Lainnya"
+
     words = text.split()
-    kategori = words[-1] if len(words) >= 1 else 'lainnya'
-    deskripsi = ' '.join(words[:-2]) if len(words) > 2 else text
-    return tipe.capitalize(), deskripsi.title(), kategori.title(), amount
+    deskripsi = []
+    for w in words:
+        if any(unit in w for unit in ["ribu", "juta"]):
+            break
+        deskripsi.append(w)
+    deskripsi = " ".join(deskripsi)
+    kategori = categorize(text)
+
+    return tipe.capitalize(), deskripsi.title(), kategori.title(), jumlah, asset
 
 # --- Handler Telegram ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -71,7 +95,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text(
-        "Selamat datang di Money Tracker!\n\nKetik transaksi seperti chat biasa.\nContoh:\n\ngajian April 8,5 juta masuk mandiri\nbeli sepatu 300 ribu Qris Mandiri",
+        "Selamat datang di Money Tracker!\n\nKetik transaksi seperti chat biasa.\nContoh:\n\ngajian Mei 7,5 juta masuk BCA\nbeli kopi tuku 23 ribu QRIS",
         reply_markup=reply_markup
     )
 
@@ -92,25 +116,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await summary_kategori(update)
         return
 
-    # Parsing transaksi biasa
     try:
-        tipe, deskripsi, kategori, jumlah = parse_transaction(text)
+        tipe, deskripsi, kategori, jumlah, asset = parse_transaction(text)
 
         if jumlah == 0:
             await update.message.reply_text("⚠️ Format jumlah tidak dikenali. Contoh: 300 ribu atau 8,5 juta")
             return
 
         tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sheet.append_row([tanggal, deskripsi, kategori, tipe, jumlah, kategori])
-
-        saldo = update_balance(kategori, jumlah, tipe)
+        sheet.append_row([tanggal, deskripsi, kategori, tipe, jumlah, asset])
+        saldo = update_balance(asset, jumlah, tipe)
 
         await update.message.reply_text(
             f"✅ *Catatanmu berhasil disimpan!*\n\n"
             f"*Deskripsi* : {deskripsi}\n"
             f"*Tanggal*   : {datetime.now().strftime('%-d %B %Y')}\n"
             f"*Nominal*   : Rp. {jumlah:,}\n"
-            f"*Asset*     : {kategori}\n\n"
+            f"*Kategori*  : {kategori}\n"
+            f"*Asset*     : {asset}\n\n"
             f"*Saldo terbaru* : Rp. {saldo:,}".replace(",", "."),
             parse_mode="Markdown"
         )
@@ -151,7 +174,10 @@ async def summary_kategori(update: Update):
     kategori_total = defaultdict(int)
     for r in records:
         if r['Tanggal'].startswith(month_prefix):
-            kategori_total[r['Kategori']] += r['Jumlah'] if r['Tipe'] == 'Pemasukan' else -r['Jumlah']
+            if r['Tipe'] == 'Pemasukan':
+                kategori_total[r['Kategori']] += r['Jumlah']
+            else:
+                kategori_total[r['Kategori']] -= r['Jumlah']
     msg = '*📊 Summary Per Kategori Bulan Ini:*\n'
     for k, v in kategori_total.items():
         msg += f"{k}: Rp. {v:,}\n"
