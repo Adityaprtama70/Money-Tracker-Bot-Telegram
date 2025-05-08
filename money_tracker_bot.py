@@ -93,22 +93,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Parsing transaksi biasa
-    tipe, deskripsi, kategori, jumlah = parse_transaction(text)
-    tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sheet.append_row([tanggal, deskripsi, kategori, tipe, jumlah, kategori])
+    try:
+        tipe, deskripsi, kategori, jumlah = parse_transaction(text)
 
-    saldo = update_balance(kategori, jumlah, tipe)
+        if jumlah == 0:
+            await update.message.reply_text("⚠️ Format jumlah tidak dikenali. Contoh: 300 ribu atau 8,5 juta")
+            return
 
-    # Kirim balasan konfirmasi
-    await update.message.reply_text(
-        f"✅ *Catatanmu berhasil disimpan!*\n\n"
-        f"*Deskripsi* : {deskripsi}\n"
-        f"*Tanggal*   : {datetime.now().strftime('%-d %B %Y')}\n"
-        f"*Nominal*   : Rp. {jumlah:,}\n"
-        f"*Asset*     : {kategori}\n\n"
-        f"*Saldo terbaru* : Rp. {saldo:,}".replace(",", "."),
-        parse_mode="Markdown"
-    )
+        tanggal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sheet.append_row([tanggal, deskripsi, kategori, tipe, jumlah, kategori])
+
+        saldo = update_balance(kategori, jumlah, tipe)
+
+        await update.message.reply_text(
+            f"✅ *Catatanmu berhasil disimpan!*\n\n"
+            f"*Deskripsi* : {deskripsi}\n"
+            f"*Tanggal*   : {datetime.now().strftime('%-d %B %Y')}\n"
+            f"*Nominal*   : Rp. {jumlah:,}\n"
+            f"*Asset*     : {kategori}\n\n"
+            f"*Saldo terbaru* : Rp. {saldo:,}".replace(",", "."),
+            parse_mode="Markdown"
+        )
+
+    except Exception as e:
+        logger.error(f"Error saat parsing transaksi: {str(e)}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Gagal memproses transaksi.\nPastikan format seperti:\n\n"
+            "`Gaji April 8,5 juta masuk BCA`\n`Beli kopi 300 ribu Qris`",
+            parse_mode="Markdown"
+        )
 
 async def summary_hari(update: Update):
     today = datetime.now().strftime("%Y-%m-%d")
